@@ -1,0 +1,104 @@
+---
+title: "sparklr demo 2"
+author: "Chemy"
+date: "9/20/2020"
+output: html_document
+---
+
+```{r setup}
+library(sparklyr)
+conf <- spark_config()
+conf$sparklyr.connect.cores.local <- 10
+conf$spark.memory.fraction <- 1
+
+sc <- spark_connect(master = "local", config = conf)
+
+```
+
+
+```{r read file}
+mushroom <- spark_read_csv(sc, name = "mushroom", path = "C:/Users/user/Desktop/Belajar/R/my_datasets/agaricus-lepiota.data", header = FALSE)
+colnames(mushroom)
+
+
+####################################################################################################################################
+## NAMA FILE PADA SPARKLYR HARUS VALID, CONTOHNYA TIDAK ADA PEMAKAIAN TANDA TITIK (.), AGAR TIDAK ADA MUNCUL ERROR SAAT DI MUTATE ##
+####################################################################################################################################
+
+library(dplyr)
+mushroom <-  mushroom %>% rename("class"= "V1",
+                    "mushroom"= "V2",
+                    "cap_surface"= "V3",
+                    "cap_color"= "V4",
+                    "bruises"= "V5",
+                    "odor"= "V6",
+                    "gill_attachment"= "V7",
+                    "gill_spacing"= "V8",
+                    "gill_size"= "V9",
+                    "gill_color"= "V10",
+                    "stalk_shape"= "V11",
+                    "stalk_root"= "V12",
+                    "stalk_surface_above_ring"= "V13",
+                    "stalk_surface_below_ring"= "V14",
+                    "stalk_color_above_ring"= "V15",
+                    "stalk_color_below_ring"= "V16",
+                    "veil_type"= "V17",
+                    "veil_color"= "V18",
+                    "ring_number"= "V19",
+                    "ring_type"= "V20",
+                    "spore_print_color"= "V21",
+                    "population"= "V22",
+                    "habitat"= "V23")
+     
+type <- sdf_schema(mushroom)
+sdf_dim(mushroom)
+```
+
+```{r mutate & impute}
+
+
+mushroom <- mushroom %>% mutate(class = ifelse(class == "p", "poisonous", class))
+mushroom <- mushroom %>% mutate(class = ifelse(class == "e", "edible", class))
+#mushroom <- mushroom %>% mutate(class = regexp_replace(class, 'p', 'poisonous'))
+mushroom
+
+#rubah ke NA
+mushroom <- mushroom %>% mutate_all(na_if,"?")
+sdf_dim(mushroom)
+
+#mencari keberadaan NA di setiap kolom
+mushroom %>% mutate_all(is.na) %>% mutate_all(as.numeric) %>%summarize_all(sum)
+
+#impute for number
+#input_cols <- c("stalk_root")
+#output_cols <- paste0(input_cols, "_imp")
+#mushroom <- mushroom %>% ft_imputer(input_cols = input_cols, output_cols = output_cols, strategy = "median")
+
+#impute for integer
+mushroom %>% count(stalk_root) #cari value mana yang paling sering muncul
+mushroom <- mushroom %>% na.replace(stalk_root = "b") #rubah NA menjadi value yang paling sering muncul
+```
+
+```{r split}
+sample <- mushroom %>% sdf_random_split(training = 0.8, testing = 0.2, seed = 69)
+train <- sample$training
+test <- sample$test
+```
+
+```{r ML}
+ls("package:sparklyr")
+mushroom %>% count(veil_type) # untuk variable yang hanya punya 1 value harus di exclude or bakal error
+
+colnames(mushroom)
+model <- train %>% ml_random_forest(class~.-veil_type, type = "classification")
+prediction <- ml_predict(model, test)
+
+ml_multiclass_classification_evaluator(prediction, metric = "accuracy") 
+```
+
+```{r ML}
+prediction
+prediction_final <- prediction %>% select(-(features:probability))
+
+spark_write_csv(prediction_final, path = "c:/Users/user/Desktop/Belajar/R/Sparklyr/spark_write/csv_2")
+```

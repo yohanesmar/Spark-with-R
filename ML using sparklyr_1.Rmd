@@ -1,0 +1,115 @@
+---
+title: "test spark"
+author: "Chemy"
+date: "9/3/2020"
+output: html_document
+---
+
+```{r connect spark local}
+library(sparklyr)
+conf <- spark_config()
+conf$sparklyr.connect.cores.local <- 10
+conf$spark.memory.fraction <- 1
+
+sc <- spark_connect(master = "local",config = conf)
+
+```
+
+
+```{r read csv file}
+bcancer <- spark_read_csv(sc, name= "bcancer", path = "C:/Users/user/Desktop/Belajar/R/my_datasets/breast-cancer.csv" , header = FALSE) #supaya ada judulnya
+
+sdf_dim(bcancer)
+sdf_nrow(bcancer)
+sdf_ncol(bcancer)
+head(bcancer)
+
+```
+
+
+```{r rapihin nama kolom}
+colnames(bcancer)
+library(dplyr)
+bcancer <- bcancer %>% rename("classifier"="V1", 
+                   "age"="V2", 
+                   "menopause"="V3", 
+                   "tumor-size"="V4", 
+                   "inv-nodes"="V5", 
+                   "node-caps"="V6",
+                   "deg-malig"="V7",
+                   "breast"="V8",
+                   "breast-quad"="V9",
+                   "irradiat"="V10")
+colnames(bcancer)
+
+type <- sdf_schema(bcancer)
+type
+
+```
+
+
+```{r split training dan test}
+partition <- sdf_random_split(bcancer, seed = 123, train= 0.8, test = 0.2)
+training <- partition$train
+test <- partition$test
+
+training
+test
+```
+
+
+```{r create model}
+modelku <- ml_naive_bayes(classifier~., x = training, model_type = "multinomial",smoothing = 7 )
+#modelku <- training %>% ml_naive_bayes(classifier~., model_type = "multinomial",smoothing = 30 )
+modelku
+
+```
+
+
+```{r create prediction + eval}
+predictku <- ml_predict(modelku,test)
+
+ml_multiclass_classification_evaluator(predictku, metric = "accuracy")  # mirip dengan acuracy confusion matrix
+
+#predictkun <- as.data.frame(predictku)
+#testkun <- as.data.frame(test)
+#library(caret)
+#testkun$classifier <- as.factor(testkun$classifier)
+#predictkun$predicted_label <- as.factor(predictkun$predicted_label)
+#confusionMatrix(testkun$classifier, predictkun$predicted_label)
+
+```
+
+  
+```{r write file dalam bentuk .csv}
+#hasilq <- as.data.frame(predictku)
+
+colnames(predictku)
+predictku ## data type <list> di delete supaya bisa di save ke .csv
+
+predictku <- predictku %>% select(-(features:probability))  ## kolom yang ada array nya dihapus supaya bisa di save csv
+colnames(predictku)
+
+
+spark_write_csv(predictku, path = "c:/Users/user/Desktop/Belajar/R/Sparklyr/spark_write/csv_1")
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
